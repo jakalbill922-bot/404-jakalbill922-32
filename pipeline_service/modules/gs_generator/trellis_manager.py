@@ -4,22 +4,22 @@ import base64
 import os
 import time
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 import io
 
 import torch
 from PIL import Image, ImageStat
 
-from config.settings import TrellisConfig
+from config import Settings
 from logger_config import logger
 from libs.trellis.pipelines import TrellisImageTo3DPipeline
 from schemas import TrellisResult, TrellisRequest, TrellisParams
 
 class TrellisService:
-    def __init__(self, settings: TrellisConfig):
+    def __init__(self, settings: Settings):
         self.settings = settings
         self.pipeline: Optional[TrellisImageTo3DPipeline] = None
-        self.gpu = settings.gpu
+        self.gpu = settings.trellis_gpu
         self.default_params = TrellisParams.from_settings(self.settings)
 
     async def startup(self) -> None:
@@ -31,7 +31,7 @@ class TrellisService:
             torch.cuda.set_device(self.gpu)
 
         self.pipeline = TrellisImageTo3DPipeline.from_pretrained(
-            self.settings.model_id
+            self.settings.trellis_model_id
         )
         self.pipeline.cuda()
         logger.success("Trellis pipeline ready.")
@@ -45,29 +45,22 @@ class TrellisService:
 
     def generate(
         self,
-        request: TrellisRequest,
+        trellis_request: TrellisRequest,
     ) -> TrellisResult:
         if not self.pipeline:
             raise RuntimeError("Trellis pipeline not loaded.")
 
-        images = request.image if isinstance(request.image, Iterable) else [request.image]
-        images_rgb = [image.convert("RGB") for image in images]
-        num_images = len(images_rgb)
-        
-        logger.info(f"Generating Trellis {request.seed=} and image size {images[0].size} (Using {num_images} images)")
+        images_rgb = [image.convert("RGB") for image in trellis_request.images]
+        logger.info(f"Generating Trellis {trellis_request.seed=} and image size {trellis_request.images[0].size}")
 
-        params = self.default_params.overrided(request.params)
-
-        start = time.time()
+        params = self.default_params.overrided(trellis_request.params)
         buffer = None
+        start = time.time()
         try:
-            # Use different pipeline methods based on number of images
-            if num_images == 1:
-                # Single image mode - use standard run() method
-                logger.info("Using single-image pipeline (run)")
+            if trellis_request.default:
                 outputs = self.pipeline.run(
                     images_rgb[0],
-                    seed=request.seed,
+                    seed=trellis_request.seed,
                     sparse_structure_sampler_params={
                         "steps": params.sparse_structure_steps,
                         "cfg_strength": params.sparse_structure_cfg_strength,
@@ -81,11 +74,10 @@ class TrellisService:
                     num_oversamples=params.num_oversamples,
                 )
             else:
-                # Multi-image mode - use run_multi_image() with mode
-                logger.info(f"Using multi-image pipeline (run_multi_image) with mode={params.mode}")
-                outputs = self.pipeline.run_multi_image(
+                # Generate with voxel-aware texture steps
+                outputs, num_voxels = self.pipeline.run_multi_image_with_voxel_count(
                     images_rgb,
-                    seed=request.seed,
+                    seed=trellis_request.seed,
                     sparse_structure_sampler_params={
                         "steps": params.sparse_structure_steps,
                         "cfg_strength": params.sparse_structure_cfg_strength,
@@ -97,9 +89,9 @@ class TrellisService:
                     preprocess_image=False,
                     formats=["gaussian"],
                     num_oversamples=params.num_oversamples,
-                    mode=params.mode
+                    voxel_threshold=25000,
                 )
-
+            
             generation_time = time.time() - start
             gaussian = outputs["gaussian"][0]
 
@@ -112,7 +104,7 @@ class TrellisService:
                 ply_file=buffer.getvalue() if buffer else None # bytes
             )
 
-            logger.success(f"Trellis finished generation in {generation_time:.2f}s.")
+            # logger.success(f"Trellis finished generation in {generation_time:.2f}s with {num_voxels} occupied voxels.")
             return result
         finally:
             if buffer:

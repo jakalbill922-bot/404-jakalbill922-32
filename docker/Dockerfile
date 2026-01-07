@@ -77,7 +77,7 @@ WORKDIR /workspace
 
 # Copy the project
 COPY pipeline_service /workspace
-COPY configuration.yaml /workspace/configuration.yaml
 
 EXPOSE 10006
-CMD ["python",  "serve.py"]
+# Use uvicorn with reload for development, python serve.py for production
+CMD ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "10006", "--reload"]

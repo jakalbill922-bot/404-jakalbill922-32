@@ -99,7 +99,8 @@ class BackgroundRemovalService(ABC):
         images_without_background = tuple(to_pil_image(o[:3]) for o in outputs) if isinstance(image, Iterable) else to_pil_image(outputs[0][:3])
 
         removal_time = time.time() - t1
-        logger.success(f"Background remove - Time: {removal_time:.2f}s - Images without background: {len(images_without_background)}")
+        num_images = len(images_without_background) if isinstance(images_without_background, tuple) else 1
+        logger.success(f"Background remove - Time: {removal_time:.2f}s - Images without background: {num_images}")
 
         return images_without_background
 

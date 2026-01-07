@@ -1,13 +1,9 @@
 from dataclasses import dataclass
-from enum import Enum
-from typing import Iterable, Optional, TypeAlias, Union
+from typing import Optional, TypeAlias
 from PIL import Image
 
 from schemas.overridable import OverridableModel
 
-class TrellisMode(str, Enum):
-    STOCHASTIC: str = 'stochastic'
-    MULTIDIFFUSION: str = 'multidiffusion'
 
 class TrellisParams(OverridableModel):
     """Trellis parameters with automatic fallback to settings."""
@@ -15,29 +11,28 @@ class TrellisParams(OverridableModel):
     sparse_structure_cfg_strength: float
     slat_steps: int
     slat_cfg_strength: float
-    mode: TrellisMode = TrellisMode.STOCHASTIC
     num_oversamples: int = 1
-    
     
     @classmethod
     def from_settings(cls, settings) -> "TrellisParams":
         return cls(
-            sparse_structure_steps = settings.sparse_structure_steps,
-            sparse_structure_cfg_strength = settings.sparse_structure_cfg_strength,
-            slat_steps = settings.slat_steps,
-            slat_cfg_strength = settings.slat_cfg_strength,
-            num_oversamples = settings.num_oversamples,
-            mode = settings.mode
+            sparse_structure_steps = settings.trellis_sparse_structure_steps,
+            sparse_structure_cfg_strength = settings.trellis_sparse_structure_cfg_strength,
+            slat_steps = settings.trellis_slat_steps,
+            slat_cfg_strength = settings.trellis_slat_cfg_strength,
+            num_oversamples = settings.trellis_num_oversamples,
         )
 
-TrellisParamsOverrides: TypeAlias = TrellisParams.Overrides
+TrellisParamsOverrides = TrellisParams.Overrides
+
 
 @dataclass
 class TrellisRequest:
     """Request for Trellis 3D generation (internal use only)."""
-    image: Union[Image.Image, Iterable[Image.Image]]
+    images: list[Image.Image]
     seed: int
     params: Optional[TrellisParamsOverrides] = None
+    default: bool = False
 
 
 @dataclass(slots=True)
